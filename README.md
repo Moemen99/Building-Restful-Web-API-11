@@ -217,3 +217,155 @@ builder.Services.AddDependencies(builder.Configuration);
 2. Update database schema
 3. Implement repository pattern (optional)
 4. Update services to use DbContext
+
+
+
+# Entity Configuration and Migration Setup
+
+## 🔑 Primary Key Conventions
+Entity Framework Core automatically recognizes primary keys using these naming conventions:
+
+| Convention | Example | Recommended |
+|------------|---------|-------------|
+| Property named `Id` | `public int Id { get; set; }` | ✅ |
+| `{EntityName}Id` | `public int PollId { get; set; }` | ❌ |
+
+## 🏗️ Entity Configuration Approaches
+
+### Method 1: Data Annotations (Not Recommended)
+```csharp
+public class Poll
+{
+    [Key]
+    public int Id { get; set; }
+    
+    [StringLength(100)]
+    public string Title { get; set; }
+    
+    [MaxLength(100)]
+    public string Summary { get; set; }
+}
+```
+
+### Method 2: Fluent API (Recommended)
+Create a dedicated configuration folder structure:
+```
+📁 Persistence/
+    📁 EntityConfigurations/
+        📄 PollConfiguration.cs
+```
+
+#### Configuration Class Example:
+```csharp
+public class PollConfiguration : IEntityTypeConfiguration<Poll>
+{
+    public void Configure(EntityTypeBuilder<Poll> builder)
+    {
+        // Unique constraint for Title
+        builder.HasIndex(p => p.Title).IsUnique();
+        
+        // Maximum length constraints
+        builder.Property(p => p.Title).HasMaxLength(100);
+        builder.Property(p => p.Summary).HasMaxLength(100);
+    }
+}
+```
+
+## 📝 DbContext Configuration
+
+### Option 1: Direct Configuration (Not Recommended)
+```csharp
+public class ApplicationDbContext : DbContext
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Poll>()
+            .Property(p => p.Title)
+            .HasMaxLength(100);
+            
+        base.OnModelCreating(modelBuilder);
+    }
+}
+```
+
+### Option 2: Using Configuration Classes (Recommended)
+```csharp
+public class ApplicationDbContext : DbContext
+{
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        // Automatically apply all configurations in assembly
+        modelBuilder.ApplyConfigurationsFromAssembly(
+            Assembly.GetExecutingAssembly());
+            
+        base.OnModelCreating(modelBuilder);
+    }
+}
+```
+
+## 🔄 Migration Commands
+
+| Command | Purpose | Example |
+|---------|---------|---------|
+| Add Migration | Create new migration | `Add-Migration InitialCreate -o Persistence/Migrations` |
+| Remove Migration | Remove unapplied migration | `Remove-Migration` |
+| Update Database | Apply migrations | `Update-Database` |
+
+## 📋 Database Objects Created
+After migration, two main objects are created:
+1. `__EFMigrationsHistory` table - Tracks applied migrations
+2. `Polls` table - Stores poll entities with configured constraints
+
+## ⚡ Quick Setup Steps
+
+1. Create Entity Configuration:
+   ```csharp
+   public class PollConfiguration : IEntityTypeConfiguration<Poll>
+   {
+       public void Configure(EntityTypeBuilder<Poll> builder)
+       {
+           builder.HasIndex(p => p.Title).IsUnique();
+           builder.Property(p => p.Title).HasMaxLength(100);
+           builder.Property(p => p.Summary).HasMaxLength(100);
+       }
+   }
+   ```
+
+2. Update DbContext:
+   ```csharp
+   protected override void OnModelCreating(ModelBuilder modelBuilder)
+   {
+       modelBuilder.ApplyConfigurationsFromAssembly(
+           Assembly.GetExecutingAssembly());
+       base.OnModelCreating(modelBuilder);
+   }
+   ```
+
+3. Run Migrations:
+   ```powershell
+   Add-Migration InitialCreate -o Persistence/Migrations
+   Update-Database
+   ```
+
+## 🔍 Best Practices
+
+1. Use Fluent API over Data Annotations
+2. Keep configurations in separate files
+3. Use automatic configuration discovery
+4. Place migrations in dedicated folder
+5. Review migrations before applying
+
+## ⚠️ Important Notes
+
+- Always review generated migrations before applying
+- Keep entity configurations focused and single-responsibility
+- Use meaningful names for migrations
+- Consider version control for migration scripts
+- Test migrations in development before production
+
+## 🔜 Next Steps
+
+1. Implement repository pattern (optional)
+2. Set up data seeding
+3. Create database indexes
+4. Implement audit fields
