@@ -541,3 +541,185 @@ public class PollRequestValidator : AbstractValidator<PollRequest>
 5. Implement caching (optional)
 6. Add logging
 7. Implement unit tests
+
+
+
+# Handling Request Cancellation
+
+## 🎯 The Problem
+When a client cancels a request (by closing the browser, clicking cancel, etc.), the server might continue processing the request, leading to:
+- Wasted server resources
+- Unnecessary database operations
+- Completed operations that the client no longer wants
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Database
+    Client->>API: Start Request
+    API->>Database: Begin Operation
+    Client->>API: Cancel Request
+    Note right of Database: Without CancellationToken:<br/>Operation continues
+    Database-->>API: Complete Operation
+    Note right of Client: Resources wasted
+```
+
+## ✨ The Solution: CancellationToken
+
+### 1. Update Service Interface
+```csharp
+public interface IPollService
+{
+    Task<IEnumerable<Poll>> GetAllAsync(CancellationToken cancellationToken = default);
+    Task<Poll?> GetAsync(int id, CancellationToken cancellationToken = default);
+    Task<Poll> AddAsync(Poll poll, CancellationToken cancellationToken = default);
+    Task<bool> UpdateAsync(int id, Poll poll, CancellationToken cancellationToken = default);
+    Task<bool> DeleteAsync(int id, CancellationToken cancellationToken = default);
+}
+```
+
+### 2. Update Service Implementation
+```csharp
+public class PollService : IPollService
+{
+    public async Task<IEnumerable<Poll>> GetAllAsync(
+        CancellationToken cancellationToken = default)
+    {
+        return await _dbContext.Polls
+            .AsNoTracking()
+            .ToListAsync(cancellationToken);
+    }
+
+    public async Task<Poll> AddAsync(
+        Poll poll, 
+        CancellationToken cancellationToken = default)
+    {
+        await _dbContext.AddAsync(poll, cancellationToken);
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return poll;
+    }
+}
+```
+
+### 3. Update Controller Actions
+```csharp
+public class PollsController : ControllerBase
+{
+    [HttpGet]
+    public async Task<IActionResult> GetAll(
+        CancellationToken cancellationToken)
+    {
+        var polls = await _pollService.GetAllAsync(cancellationToken);
+        var response = polls.Adapt<IEnumerable<PollResponse>>();
+        return Ok(response);
+    }
+
+    [HttpPost]
+    public async Task<IActionResult> Add(
+        [FromBody] PollRequest request,
+        CancellationToken cancellationToken)
+    {
+        var newPoll = await _pollService.AddAsync(
+            request.Adapt<Poll>(), 
+            cancellationToken);
+            
+        return CreatedAtAction(
+            nameof(Get),
+            new { id = newPoll.Id },
+            newPoll);
+    }
+}
+```
+
+## 🔄 How It Works
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant API
+    participant Database
+    Client->>API: Start Request
+    API->>Database: Begin Operation<br/>(with CancellationToken)
+    Client->>API: Cancel Request
+    API->>Database: Cancel Operation
+    Database-->>API: Operation Cancelled
+    API-->>Client: Request Cancelled
+    Note right of Database: Resources freed
+```
+
+## 📋 Implementation Steps
+
+1. Add CancellationToken parameter to:
+   - [ ] Service interface methods
+   - [ ] Service implementation methods
+   - [ ] Controller actions
+
+2. Pass CancellationToken to:
+   - [ ] Database queries (`ToListAsync`, etc.)
+   - [ ] Database commands (`SaveChangesAsync`, etc.)
+   - [ ] Any other async operations
+
+## ⚡ Benefits
+
+- Improved resource utilization
+- Better responsiveness to client cancellation
+- Reduced server load
+- Prevented unnecessary database operations
+- Enhanced application reliability
+
+## ⚠️ Important Notes
+
+1. Default Value
+   - Always provide default value: `CancellationToken cancellationToken = default`
+   - Allows methods to be called without explicitly passing a token
+
+2. Token Propagation
+   - Pass the token through the entire call chain
+   - Don't create new tokens unless necessary
+
+3. Exception Handling
+   - Handle `OperationCanceledException`
+   - Properly clean up resources on cancellation
+
+4. Performance Considerations
+   - Minimal overhead when not cancelled
+   - Significant resource savings when cancelled
+
+## 🔍 Best Practices
+
+1. Always pass the token to database operations
+2. Implement cancellation support in long-running operations
+3. Handle cancellation exceptions appropriately
+4. Clean up resources in case of cancellation
+5. Test cancellation scenarios
+
+## 📚 Example Usage
+
+```csharp
+// In a long-running query
+public async Task<List<Poll>> GetLargeDatasetAsync(
+    CancellationToken cancellationToken)
+{
+    try
+    {
+        return await _dbContext.Polls
+            .AsNoTracking()
+            .Where(p => p.IsPublished)
+            .ToListAsync(cancellationToken);
+    }
+    catch (OperationCanceledException)
+    {
+        // Handle cancellation
+        throw;
+    }
+}
+```
+
+## 🔜 Next Steps
+
+1. Implement timeout mechanisms
+2. Add cancellation support to background tasks
+3. Create cancellation policies
+4. Add monitoring for cancelled operations
+5. Implement retry mechanisms where appropriate
