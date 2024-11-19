@@ -467,7 +467,7 @@ public record PollResponse(
 
 ### Request DTO
 ```csharp
-public record CreatePollRequest(
+public record PollRequest(
     string Title,
     string Summary,
     bool IsPublished,
