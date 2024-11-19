@@ -909,3 +909,163 @@ sequenceDiagram
 - [ ] Test cancellation scenarios
 - [ ] Test concurrent operations
 - [ ] Verify response status codes
+
+
+# Custom Validation Rules Implementation
+
+## 🎯 Business Rules
+1. Start date cannot be in the past
+2. End date must be after or equal to start date
+3. Both dates are required
+
+## ✨ Validator Implementation
+
+```csharp
+public class PollRequestValidator : AbstractValidator<PollRequest>
+{
+    public PollRequestValidator()
+    {
+        // Title validation
+        RuleFor(pr => pr.Title)
+            .NotEmpty()
+            .Length(3, 100);
+
+        // Summary validation
+        RuleFor(pr => pr.Summary)
+            .NotEmpty()
+            .Length(3, 1500);
+
+        // Start date validation
+        RuleFor(pr => pr.StartsAt)
+            .NotEmpty()
+            .GreaterThanOrEqualTo(DateOnly.FromDateTime(DateTime.Today));
+
+        // End date validation
+        RuleFor(pr => pr.EndsAt)
+            .NotEmpty();
+
+        // Custom date range validation
+        RuleFor(pr => pr)
+            .Must(HasValidDates)
+            .WithName(nameof(PollRequest.EndsAt))
+            .WithMessage("{PropertyName} must be greater than or equal to start date");
+    }
+
+    private bool HasValidDates(PollRequest request)
+        => request.EndsAt >= request.StartsAt;
+}
+```
+
+## 🔄 Validation Flow
+
+```mermaid
+graph TD
+    A[Receive Poll Request] --> B{Validate Title}
+    B -->|Valid| C{Validate Summary}
+    B -->|Invalid| Z[Return Error]
+    C -->|Valid| D{Validate Start Date}
+    C -->|Invalid| Z
+    D -->|Valid| E{Validate End Date}
+    D -->|Invalid| Z
+    E -->|Valid| F{Compare Dates}
+    E -->|Invalid| Z
+    F -->|Valid| G[Process Request]
+    F -->|Invalid| Z
+```
+
+## 📋 Validation Rules Breakdown
+
+### Title Rules
+```csharp
+RuleFor(pr => pr.Title)
+    .NotEmpty()
+    .Length(3, 100);
+```
+- Must not be empty
+- Length between 3 and 100 characters
+
+### Summary Rules
+```csharp
+RuleFor(pr => pr.Summary)
+    .NotEmpty()
+    .Length(3, 1500);
+```
+- Must not be empty
+- Length between 3 and 1500 characters
+
+### Start Date Rules
+```csharp
+RuleFor(pr => pr.StartsAt)
+    .NotEmpty()
+    .GreaterThanOrEqualTo(DateOnly.FromDateTime(DateTime.Today));
+```
+- Must not be empty
+- Must be today or in the future
+
+### End Date Rules
+```csharp
+RuleFor(pr => pr.EndsAt)
+    .NotEmpty();
+
+RuleFor(pr => pr)
+    .Must(HasValidDates)
+    .WithName(nameof(PollRequest.EndsAt))
+    .WithMessage("{PropertyName} must be greater than or equal to start date");
+```
+- Must not be empty
+- Must be greater than or equal to start date
+
+## 🎭 Example Scenarios
+
+| Scenario | Start Date | End Date | Valid | Reason |
+|----------|------------|----------|-------|---------|
+| Past Start | 2024-03-01 | 2024-04-01 | ❌ | Start date in past |
+| Invalid Range | 2024-04-03 | 2024-04-01 | ❌ | End before start |
+| Valid Range | 2024-04-01 | 2024-04-03 | ✅ | Valid dates |
+| Same Day | 2024-04-01 | 2024-04-01 | ✅ | Valid (equal dates) |
+
+## ⚡ Key Features
+
+1. **Cross-property Validation**
+   - Uses `Must()` for custom validation logic
+   - Compares multiple properties in single validation
+
+2. **Custom Error Messages**
+   - Uses property name in error message
+   - Clear, user-friendly error descriptions
+
+3. **Business Logic Enforcement**
+   - Prevents invalid date ranges
+   - Ensures future-dated polls
+
+## ⚠️ Important Notes
+
+1. Date Validation
+   - Uses `DateOnly` for date comparison
+   - Excludes time component
+   - Handles timezone considerations
+
+2. Error Messages
+   - Custom formatted messages
+   - Property name included automatically
+   - Localizable error messages
+
+## 🔜 Possible Improvements
+
+1. Add maximum date range validation
+2. Implement custom date formats
+3. Add timezone support
+4. Create localized error messages
+5. Add business hours validation
+6. Implement holiday checking
+7. Add batch validation support
+
+## 📋 Testing Checklist
+
+- [ ] Test past start dates
+- [ ] Test invalid date ranges
+- [ ] Test equal start and end dates
+- [ ] Test valid future dates
+- [ ] Test empty dates
+- [ ] Test error messages
+- [ ] Test edge cases
