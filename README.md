@@ -369,3 +369,175 @@ After migration, two main objects are created:
 2. Set up data seeding
 3. Create database indexes
 4. Implement audit fields
+
+
+
+# Implementing Database-Driven Services
+
+## 🔄 Service Interface Updates
+Convert service operations to async:
+
+```csharp
+public interface IPollService
+{
+    Task<IEnumerable<Poll>> GetAllAsync();
+    Task<Poll?> GetAsync(int id);
+    Task<Poll> AddAsync(Poll poll);
+    Task<bool> UpdateAsync(int id, Poll poll);
+    Task<bool> DeleteAsync(int id);
+}
+```
+
+## 💼 Service Implementation
+
+```csharp
+public class PollService(ApplicationDbContext dbContext) : IPollService
+{
+    private readonly ApplicationDbContext _dbContext = dbContext;
+
+    public async Task<IEnumerable<Poll>> GetAllAsync()
+        => await _dbContext.Polls.AsNoTracking().ToListAsync();
+
+    public async Task<Poll?> GetAsync(int id)
+        => await _dbContext.Polls.FindAsync(id);
+
+    public async Task<Poll> AddAsync(Poll poll)
+    {
+        await _dbContext.AddAsync(poll);
+        await _dbContext.SaveChangesAsync();
+        return poll;
+    }
+}
+```
+
+> 💡 **Note**: `AsNoTracking()` is used to improve performance when we don't need to track entity changes.
+
+## 🎮 Controller Updates
+Updated controller with async operations:
+
+```csharp
+public class PollsController(IPollService pollService) : ControllerBase
+{
+    private readonly IPollService _pollService = pollService;
+
+    [HttpGet("")]
+    public async Task<IActionResult> GetAll()
+    {
+        var polls = await _pollService.GetAllAsync();
+        var response = polls.Adapt<IEnumerable<PollResponse>>();
+        return Ok(response);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> Get([FromRoute] int id)
+    {
+        var poll = await _pollService.GetAsync(id);
+        if (poll is null)
+            return NotFound();
+        
+        var response = poll.Adapt<PollResponse>();
+        return Ok(response);
+    }
+
+    [HttpPost("")]
+    public async Task<IActionResult> Add([FromBody] PollRequest request)
+    {
+        var newPoll = await _pollService.AddAsync(request.Adapt<Poll>());
+        return CreatedAtAction(
+            nameof(Get),
+            new { id = newPoll.Id },
+            newPoll);
+    }
+}
+```
+
+## 📝 DTOs (Data Transfer Objects)
+
+### Response DTO
+```csharp
+public record PollResponse(
+    int Id,
+    string Title,
+    string Summary,
+    bool IsPublished,
+    DateOnly StartsAt,
+    DateOnly EndsAt
+);
+```
+
+### Request DTO
+```csharp
+public record CreatePollRequest(
+    string Title,
+    string Summary,
+    bool IsPublished,
+    DateOnly StartsAt,
+    DateOnly EndsAt
+);
+```
+
+## ✅ Validation
+
+```csharp
+public class PollRequestValidator : AbstractValidator<PollRequest>
+{
+    public PollRequestValidator()
+    {
+        RuleFor(pr => pr.Title)
+            .NotEmpty()
+            .Length(3, 100);
+
+        RuleFor(pr => pr.Summary)
+            .NotEmpty()
+            .Length(3, 1500);
+    }
+}
+```
+
+## 📋 Implementation Checklist
+
+- [ ] Update IPollService with async methods
+- [ ] Implement PollService with database operations
+- [ ] Update controller to use async operations
+- [ ] Update DTOs with new properties
+- [ ] Implement validation rules
+- [ ] Test API endpoints
+
+## 🔍 Key Points
+
+1. **Async Operations**
+   - All database operations are now async
+   - Using Task<T> for asynchronous results
+   - Proper async/await pattern implementation
+
+2. **Entity Tracking**
+   - Using `AsNoTracking()` for read-only operations
+   - Improves performance for queries
+
+3. **Response Structure**
+   - CreatedAtAction returns proper location header
+   - Consistent response formats
+   - Proper error handling (NotFound)
+
+4. **Validation**
+   - Fluent Validation for request validation
+   - Length constraints
+   - Required field validation
+
+## ⚠️ Important Notes
+
+1. IsPublished is false by default
+2. ID is auto-generated
+3. SaveChangesAsync must be called after database modifications
+4. Proper error handling should be implemented
+5. Validation rules should match database constraints
+
+## 🔜 Next Steps
+
+1. Implement remaining CRUD operations
+2. Add error handling middleware
+3. Implement pagination
+4. Add sorting and filtering
+5. Implement caching (optional)
+6. Add logging
+7. Implement unit tests
