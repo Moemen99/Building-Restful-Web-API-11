@@ -723,3 +723,189 @@ public async Task<List<Poll>> GetLargeDatasetAsync(
 3. Create cancellation policies
 4. Add monitoring for cancelled operations
 5. Implement retry mechanisms where appropriate
+
+
+
+# Update and Delete Endpoints Implementation
+
+## 🔄 Update Operation
+
+### Service Implementation
+```csharp
+public async Task<bool> UpdateAsync(int id, Poll poll, 
+    CancellationToken cancellationToken = default)
+{
+    var currentPoll = await GetAsync(id, cancellationToken);
+    if (currentPoll is null)
+        return false;
+        
+    currentPoll.Title = poll.Title;
+    currentPoll.Summary = poll.Summary;
+    currentPoll.StartsAt = poll.StartsAt;
+    currentPoll.EndsAt = poll.EndsAt;
+    
+    await _dbContext.SaveChangesAsync(cancellationToken);
+    return true;
+}
+```
+
+### Controller Implementation
+```csharp
+[HttpPut("{id}")]
+public async Task<IActionResult> Update(
+    [FromRoute] int id,
+    [FromBody] PollRequest request,
+    CancellationToken cancellationToken)
+{
+    var isUpdated = await _pollService.UpdateAsync(
+        id,
+        request.Adapt<Poll>(),
+        cancellationToken);
+
+    if (!isUpdated)
+        return NotFound();
+        
+    return NoContent();
+}
+```
+
+## ❌ Delete Operation
+
+### Service Implementation
+```csharp
+public async Task<bool> DeleteAsync(int id, 
+    CancellationToken cancellationToken = default)
+{
+    var poll = await GetAsync(id, cancellationToken);
+    if (poll is null)
+        return false;
+        
+    _dbContext.Remove(poll);
+    await _dbContext.SaveChangesAsync(cancellationToken);
+    return true;
+}
+```
+
+### Controller Implementation
+```csharp
+[HttpDelete("{id}")]
+public async Task<IActionResult> Delete(
+    [FromRoute] int id,
+    CancellationToken cancellationToken)
+{
+    var isDeleted = await _pollService.DeleteAsync(id, cancellationToken);
+    if (!isDeleted)
+        return NotFound();
+        
+    return NoContent();
+}
+```
+
+## 📊 Response Status Codes
+
+| Operation | Success | Not Found | Description |
+|-----------|---------|-----------|-------------|
+| Update    | 204     | 404       | Returns NoContent on success |
+| Delete    | 204     | 404       | Returns NoContent on success |
+
+## 🔄 Operation Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Controller
+    participant Service
+    participant Database
+
+    %% Update Flow
+    rect rgb(200, 220, 255)
+        Note over Client,Database: Update Operation
+        Client->>Controller: PUT /api/polls/{id}
+        Controller->>Service: UpdateAsync(id, poll)
+        Service->>Database: GetAsync(id)
+        Database-->>Service: Poll/null
+        alt Poll Found
+            Service->>Database: SaveChangesAsync()
+            Service-->>Controller: true
+            Controller-->>Client: 204 NoContent
+        else Poll Not Found
+            Service-->>Controller: false
+            Controller-->>Client: 404 NotFound
+        end
+    end
+
+    %% Delete Flow
+    rect rgb(255, 220, 220)
+        Note over Client,Database: Delete Operation
+        Client->>Controller: DELETE /api/polls/{id}
+        Controller->>Service: DeleteAsync(id)
+        Service->>Database: GetAsync(id)
+        Database-->>Service: Poll/null
+        alt Poll Found
+            Service->>Database: Remove(poll)
+            Service->>Database: SaveChangesAsync()
+            Service-->>Controller: true
+            Controller-->>Client: 204 NoContent
+        else Poll Not Found
+            Service-->>Controller: false
+            Controller-->>Client: 404 NotFound
+        end
+    end
+```
+
+## 🔍 Important Notes
+
+1. **Update Operation**
+   - Validates existence before update
+   - Updates all provided fields
+   - Returns 204 on success
+   - Returns 404 if poll not found
+
+2. **Delete Operation**
+   - Validates existence before deletion
+   - Performs physical deletion
+   - Returns 204 on success
+   - Returns 404 if poll not found
+
+3. **Common Features**
+   - Both operations support cancellation
+   - Both use optimistic concurrency
+   - Both handle non-existent resources
+
+## ⚠️ Considerations
+
+1. **Concurrency**
+   - Consider adding concurrency tokens
+   - Handle concurrent update conflicts
+
+2. **Validation**
+   - Add validation for update requests
+   - Verify date ranges
+
+3. **Soft Delete**
+   - Consider implementing soft delete
+   - Add IsDeleted flag if needed
+
+4. **Audit Trail**
+   - Consider logging changes
+   - Track who made changes
+
+## 🔜 Future Improvements
+
+1. Add concurrency handling
+2. Implement soft delete
+3. Add audit trails
+4. Add validation middleware
+5. Implement event logging
+6. Add transaction support
+7. Implement bulk operations
+
+## 📋 Testing Checklist
+
+- [ ] Test successful update
+- [ ] Test update with non-existent ID
+- [ ] Test successful delete
+- [ ] Test delete with non-existent ID
+- [ ] Test cancellation scenarios
+- [ ] Test concurrent operations
+- [ ] Verify response status codes
