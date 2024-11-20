@@ -1069,3 +1069,165 @@ RuleFor(pr => pr)
 - [ ] Test empty dates
 - [ ] Test error messages
 - [ ] Test edge cases
+
+
+
+# Toggle Publish Status Feature
+
+## 🎯 Purpose
+Separate endpoint to handle poll publication state changes without modifying other poll properties.
+
+## 🔄 Implementation Flow
+
+```mermaid
+sequenceDiagram
+    participant Client
+    participant Controller
+    participant Service
+    participant Database
+
+    Client->>Controller: PUT /api/polls/{id}/togglePublish
+    Controller->>Service: TogglePublishStatusAsync(id)
+    Service->>Database: GetAsync(id)
+    Database-->>Service: Poll/null
+    
+    alt Poll Found
+        Service->>Service: Toggle IsPublished
+        Service->>Database: SaveChangesAsync()
+        Service-->>Controller: true
+        Controller-->>Client: 204 NoContent
+    else Poll Not Found
+        Service-->>Controller: false
+        Controller-->>Client: 404 NotFound
+    end
+```
+
+## 💻 Code Implementation
+
+### 1. Service Interface
+```csharp
+public interface IPollService
+{
+    // ... other methods
+    Task<bool> TogglePublishStatusAsync(
+        int id, 
+        CancellationToken cancellationToken = default);
+}
+```
+
+### 2. Service Implementation
+```csharp
+public class PollService : IPollService
+{
+    public async Task<bool> TogglePublishStatusAsync(
+        int id, 
+        CancellationToken cancellationToken = default)
+    {
+        var poll = await GetAsync(id, cancellationToken);
+        if (poll is null)
+            return false;
+
+        poll.IsPublished = !poll.IsPublished;
+        await _dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+}
+```
+
+### 3. Controller Implementation
+```csharp
+public class PollsController : ControllerBase
+{
+    [HttpPut("{id}/togglePublish")]
+    public async Task<IActionResult> TogglePublishStatus(
+        [FromRoute] int id,
+        CancellationToken cancellationToken)
+    {
+        var isUpdated = await _pollService
+            .TogglePublishStatusAsync(id, cancellationToken);
+            
+        if (!isUpdated)
+            return NotFound();
+            
+        return NoContent();
+    }
+}
+```
+
+## 📊 API Endpoint Details
+
+| Method | Path | Success | Not Found |
+|--------|------|---------|-----------|
+| PUT | `/api/polls/{id}/togglePublish` | 204 | 404 |
+
+## ⚡ Key Features
+
+1. **Dedicated Endpoint**
+   - Separate from general update
+   - Single responsibility
+   - Clear intention
+
+2. **Toggle Behavior**
+   - Switches between true/false
+   - No need to specify desired state
+   - Atomic operation
+
+3. **Status Codes**
+   - 204: Successfully toggled
+   - 404: Poll not found
+
+## 🔍 Important Notes
+
+1. **Default Value**
+   - `IsPublished` defaults to `false` on creation
+   - Can be toggled any time after creation
+
+2. **Idempotency**
+   - Each call inverts the current state
+   - Multiple calls alternate the state
+
+3. **Concurrency**
+   - Supports cancellation token
+   - Consider adding concurrency checks
+
+## 📋 Testing Scenarios
+
+- [ ] Toggle unpublished poll to published
+- [ ] Toggle published poll to unpublished
+- [ ] Attempt to toggle non-existent poll
+- [ ] Test cancellation scenarios
+- [ ] Verify state after multiple toggles
+
+## 🔜 Possible Enhancements
+
+1. Add audit logging for state changes
+2. Include publication timestamp
+3. Add authorization requirements
+4. Implement publication workflows
+5. Add publication scheduling
+6. Include notification system
+7. Add state transition validation
+
+## 🛠️ Usage Example
+
+```http
+PUT /api/polls/1/togglePublish
+```
+
+**Response Scenarios:**
+- Success: 204 No Content
+- Not Found: 404 Not Found
+
+## ⚠️ Considerations
+
+1. **Authorization**
+   - Consider who can toggle publication
+   - Add role-based access control
+
+2. **Validation**
+   - Add business rules for publication
+   - Validate poll completeness
+
+3. **Notifications**
+   - Notify relevant parties
+   - Track state changes
